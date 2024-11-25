@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Consecutive Audio Recordings with Separate Microphone & Output Files</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      text-align: center;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 18px;
+      cursor: pointer;
+      margin: 10px;
+    }
+    #status {
+      margin-top: 20px;
+      font-size: 20px;
+      color: blue;
+    }
+    audio {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Consecutive Audio Recordings with Separate Files</h1>
+  <button id="startButton">Start Recording</button>
+  <div id="status">Press the button to start recording</div>
+  <audio id="playbackAudio" controls></audio>
+
+  <script>
+    const startButton = document.getElementById('startButton');
+    const status = document.getElementById('status');
+    const playbackAudio = document.getElementById('playbackAudio');
+    
+    let firstRecorder, secondRecorder;
+    let firstChunks = [], secondChunks = [];
+    let audioStream, audioContext, outputStream;
+
+    startButton.addEventListener('click', async () => {
+      startButton.disabled = true;
+      status.textContent = "Recording first 5 seconds of audio...";
+      firstChunks = [];
+      secondChunks = [];
+
+      try {
+        // Step 1: Request microphone audio stream
+        audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: true
+        });
+
+        // Step 2: Create an AudioContext for capturing speaker output
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        outputStream = audioContext.createMediaStreamDestination();
+
+        // Step 3: Connect microphone audio to output stream
+        const microphone = audioContext.createMediaStreamSource(audioStream);
+        microphone.connect(outputStream);
+
+        // Step 4: Record the first 5 seconds from microphone
+        firstRecorder = new MediaRecorder(audioStream);
+        firstRecorder.ondataavailable = (event) => firstChunks.push(event.data);
+        firstRecorder.start();
+
+        setTimeout(() => {
+          firstRecorder.stop();
+          firstRecorder.onstop = () => {
+            status.textContent = "First recording complete. Starting second 5-second recording...";
+
+            // Convert the first recording to Blob and set it for playback
+            const firstBlob = new Blob(firstChunks, { type: 'audio/webm' });
+            const firstAudioURL = URL.createObjectURL(firstBlob);
+            playbackAudio.src = firstAudioURL;
+            playbackAudio.play(); // Play the first recording back to the user
+
+            // Step 5: Record the second 5 seconds while playing the first recording
+            secondRecorder = new MediaRecorder(audioStream);
+            secondRecorder.ondataavailable = (event) => secondChunks.push(event.data);
+            secondRecorder.start();
+
+            setTimeout(() => {
+              secondRecorder.stop();
+              secondRecorder.onstop = () => {
+                status.textContent = "Second recording complete. Saving microphone input and speaker output...";
+
+                // Save the microphone input (second recording) as a separate file (webm format)
+                const secondBlob = new Blob(secondChunks, { type: 'audio/webm' });
+
+                // Save both files: microphone input and speaker output
+                saveRecording(secondBlob, 'microphone-input.webm');
+                saveRecording(new Blob(firstChunks, { type: 'audio/webm' }), 'speaker-output.webm');
+
+                status.textContent = "Process complete. Both recordings are ready for download.";
+                startButton.disabled = false;
+              };
+            }, 5000); // Record second audio for 5 seconds
+          };
+        }, 5000); // Record first audio for 5 seconds
+      } catch (error) {
+        console.error("Error capturing audio:", error);
+        status.textContent = "Failed to access microphone. Please check permissions or browser settings.";
+        startButton.disabled = false;
+      }
+    });
+
+    // Function to save a recording
+    function saveRecording(blob, fileName) {
+      const downloadLink = document.createElement('a');
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.download = fileName;
+      downloadLink.textContent = `Download ${fileName}`;
+      document.body.appendChild(downloadLink);
+    }
+  </script>
+</body>
+</html>
